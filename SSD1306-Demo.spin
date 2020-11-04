@@ -85,54 +85,44 @@ PUB Main | time_ms
         _input_cog := cognew(SwitchInPut, @_stack_timer[80])
         
         ShowDisplay(runningMode)
-        time.MSleep(1000)
-        oled.ClearAll
-        Demo_Bitmap(5000, @Beanie)
 {
     Demo_Greet
     time.Sleep (5)
     oled.ClearAll
-
-    time_ms := 5_000
-
-    Demo_Bitmap (time_ms, @Beanie)
-    oled.ClearAll
 }
     Stop
-    'Main
-    'FlashLED(LED, 100)
 
-PUB StartLED
+PUB StartLED | dt, lpin, rpin, i
     dira[LED_L1..LED_L4] := %1111
     dira[LED_R1..LED_R4] := %1111
+    dt := 80
+    lpin := LED_L1
+    rpin := LED_R1
     repeat 2
-        outa[LED_L1] := outa[LED_R1] := %11
-        time.MSleep (100)
-        outa[LED_L1] := outa[LED_R1] := %00
-        outa[LED_L2] := outa[LED_R2] := %11
-        time.MSleep (100)
-        outa[LED_L2] := outa[LED_R2] := %00
-        outa[LED_L3] := outa[LED_R3] := %11
-        time.MSleep (100)
-        outa[LED_L3] := outa[LED_R3] := %00
-        outa[LED_L4] := outa[LED_R4] := %11
-        time.MSleep (100)
-        outa[LED_L4] := outa[LED_R4] := %00
+        repeat i from 0 to 3
+            outa[lpin+i] := outa[rpin+i] := %11
+            time.MSleep (dt)
+            outa[lpin+i] := outa[rpin+i] := %00
 
 PUB SwitchInPut | prevA, nowA, nowB
     dira[ROT_A..ROT_B]~     'define the input pins
+    dira[LED_L4]~~
+    dira[LED_R4]~~
     prevA := ina[ROT_A]
     cwCnt := ccwCnt := 0
     time.MSleep(10)
             
-    repeat while true
+    repeat
         nowA := ina[ROT_A]
         nowB := ina[ROT_B]
-        if(prevA == 0 & nowA == 1 & nowB == 0)      'CW
+        outa[LED_R4] := nowA
+        outa[LED_L4] := nowB
+        if(!prevA & nowA & !nowB == 1)      'CW
             cwCnt++
-        elseif(prevA == 0 & nowA == 1 & nowB == 1)      'CCW
+        elseif(prevA & !nowA & !nowB == 1)      'CCW
+'        if(prevA == 1 & nowA == 0 & nowB == 0)      'CCW
             ccwCnt++
-        elseif(cwCnt + ccwCnt > 30)  'switch mode
+        elseif(cwCnt + ccwCnt > 100)  'switch mode
             cwCnt := ccwCnt := 0
             if(runningMode == cfg#METRONOME_MODE)
                 runningMode := cfg#TUNER_MODE
@@ -140,7 +130,7 @@ PUB SwitchInPut | prevA, nowA, nowB
                 runningMode := cfg#METRONOME_MODE
 
         prevA := nowA                
-        time.MSleep(10)
+        time.MSleep(5)
     
 PUB Blink(pin,times)
     dira[pin] := 1
@@ -152,13 +142,9 @@ PUB Blink(pin,times)
         
 PUB Tuner
     dira[MICIN]~
-    dira[LED_R4]~~
     
     repeat
         repeat while (runningMode == cfg#TUNER_MODE)
-            outa[LED_R4]~~
-            time.MSleep(100)
-            outa[LED_R4]~
             time.MSleep(100)
         
 
@@ -169,6 +155,7 @@ PUB Metronome(beat) | metroled
     
     repeat
         repeat while (runningMode == cfg#METRONOME_MODE)
+            beat := beat - ccwCnt + cwCnt
             outa[BUZZER] := 1
             outa[metroled] := 1
             time.MSleep (100)
@@ -180,6 +167,32 @@ PUB Metronome(beat) | metroled
                 metroled := LED_L1
             else
                 metroled := LED_R1
+
+PUB ShowDisplay(n) | tmp1,tmp2
+    'cwCnt := ccwCnt := 0
+    oled.FGcolor(1)
+    oled.BGColor(0)
+    
+    repeat
+        tmp1 := cwCnt
+        tmp2 := ccwCnt
+        oled.Position (2,2)
+        oled.Str(int.Dec(tmp1))
+        oled.Position (2,3)
+        oled.Str(int.Dec(tmp2))
+        oled.Position (2,4)
+        oled.Str(int.Dec(tmp1 + tmp2))
+        
+        if(runningMode == cfg#TUNER_MODE)
+            oled.Position(3,0)
+            oled.Str(string("**** Tuner ****"))
+        if(runningMode == cfg#METRONOME_MODE)
+            oled.Position (2,0)
+            oled.Str(string("**** Metronome ****"))
+            
+        oled.Update
+        time.MSleep(500)
+        oled.ClearAll
 
 
 PUB Demo_Bitmap(testtime, bitmap_addr) | iteration
@@ -227,25 +240,6 @@ PUB Demo_Contrast(reps, delay_ms) | contrast_level
 
     ser.newline
     
-PUB ShowDisplay(n)
-    oled.FGcolor(1)
-    oled.BGColor(0)
-    oled.Position (2,2)
-    oled.Str(int.Dec(cwCnt))
-    oled.Position (2,3)
-    oled.Str(int.Dec(ccwCnt))
-    
-    if(runningMode == cfg#TUNER_MODE)
-        oled.Position(3,0)
-        oled.Str(string("**** Tuner ****"))
-    if(runningMode == cfg#METRONOME_MODE)
-        oled.Position (2,0)
-        oled.Str(string("**** Metronome ****"))
-        
-    oled.Update
-    time.MSleep(500)
-    oled.ClearAll
-    ShowDisplay(n)
 
 PUB Demo_Greet
 ' Display the banner/greeting on the OLED
