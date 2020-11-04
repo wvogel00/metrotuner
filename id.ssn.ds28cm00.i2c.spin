@@ -1,0 +1,139 @@
+{
+    --------------------------------------------
+    Filename: id.ssn.ds28cm00.i2c.spin
+    Author: Jesse Burt
+    Description: Driver for the DS28CM00 64-bit I2C Silicon Serial Number
+    Copyright (c) 2020
+    Started Oct 27, 2019
+    Updated Sep 12, 2020
+    See end of file for terms of use.
+    --------------------------------------------
+    NOTE: This driver will start successfully if the Propeller's EEPROM is on
+        the chosen I2C bus and will return data from the EEPROM!
+}
+
+CON
+
+    SLAVE_WR        = core#SLAVE_ADDR
+    SLAVE_RD        = core#SLAVE_ADDR|1
+
+    DEF_SCL         = 28
+    DEF_SDA         = 29
+    DEF_HZ          = 100_000
+
+    BUS_I2C         = 0
+    BUS_SMBUS       = 1
+
+OBJ
+
+    i2c : "com.i2c"
+    core: "core.con.ds28cm00"
+    time: "time"
+    crcs: "math.crc"
+
+PUB Null{}
+' This is not a top-level object
+
+PUB Start{}: okay
+' Standard Propeller I2C pins and 100kHz
+    okay := startx (DEF_SCL, DEF_SDA, DEF_HZ)
+
+PUB Startx(SCL_PIN, SDA_PIN, I2C_HZ): okay
+
+    if lookdown(SCL_PIN: 0..31) and lookdown(SDA_PIN: 0..31)
+        i2c.setupx(SCL_PIN, SDA_PIN, I2C_HZ)            ' I2C Object Started?
+        time.msleep(1)
+        if i2c.present(SLAVE_WR)                        ' Response from device?
+            if deviceid{} == core#DEVID_RESP
+            return cogid+1
+
+    return FALSE                                        ' Something above went wrong
+
+PUB Stop{}
+
+PUB CM(mode): curr_mode | cmd_pkt, tmp
+' Set bus mode to I2C or SMBus
+'   Valid values: BUS_I2C (0) or BUS_SMBUS(1)
+'   Any other value polls the chip and returns the current setting
+    readreg(core#CTRL_REG, 1, @curr_mode)
+    case mode
+        BUS_I2C, BUS_SMBUS:
+            cmd_pkt.byte[0] := SLAVE_WR
+            cmd_pkt.byte[1] := core#CTRL_REG
+            cmd_pkt.byte[2] := mode
+        other:
+            return
+
+    i2c.start{}
+    repeat tmp from 0 to 2
+        i2c.write(cmd_pkt.byte[tmp])
+    i2c.stop{}
+
+PUB CRC{}: crcbyte
+' Read the CRC byte from the chip
+' NOTE: The CRC is of the first 56-bits of the ROM (8 bits Device Family Code + 48 bits Serial Number)
+    readreg(core#CRC, 1, @crcbyte)
+
+PUB CRCValid{}: valid | tmp[2]
+' Test CRC returned from chip for equality with calculated CRC
+'   Returns TRUE if CRC is valid, FALSE otherwise
+    tmp := 0
+    readreg(core#DEV_FAMILY, 7, @tmp)
+    return (CRC{} == crcs.dallasmaximcrc8(@tmp, 7))
+
+PUB DeviceID{}: id
+' Reads the Device ID (Family Code)
+'   Returns $70
+    id := 0
+    readreg(core#DEV_FAMILY, 1, @id)
+
+PUB SN(ptr_buff)
+' Reads the unique 64-bit serial number into buffer at address ptr_buff
+' NOTE: This buffer must be 8 bytes in length.
+    readreg(core#DEV_FAMILY, 8, ptr_buff)
+
+PRI readReg(reg, nr_bytes, ptr_buff) | cmd_pkt, tmp
+' Read nr_bytes from the slave device
+    case reg
+        $00..$08:
+        other:
+            return
+
+    case nr_bytes
+        1..9:
+            cmd_pkt.byte[0] := SLAVE_WR
+            cmd_pkt.byte[1] := reg
+        other:
+            return
+
+    i2c.start{}
+    i2c.write(cmd_pkt.byte[0])
+    i2c.write(cmd_pkt.byte[1])
+
+    i2c.start{}
+    i2c.write (SLAVE_RD)
+    repeat tmp from 0 to nr_bytes-1
+        byte[ptr_buff][tmp] := i2c.read(tmp == (nr_bytes-1))
+    i2c.stop{}
+
+DAT
+{
+    --------------------------------------------------------------------------------------------------------
+    TERMS OF USE: MIT License
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+    associated documentation files (the "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+    following conditions:
+
+    The above copyright notice and this permission notice shall be included in all copies or substantial
+    portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    --------------------------------------------------------------------------------------------------------
+}
